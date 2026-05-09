@@ -1,0 +1,8 @@
+flask
+flask-cors
+joblib
+xgboost
+scikit-learn==1.7.2
+groq
+python-dotenv
+gunicorn
