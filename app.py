@@ -59,7 +59,6 @@ def get_groq_interpretation(text, result, confidence):
     Menghasilkan analisis cerdas dengan pembersihan karakter otomatis.
     """
     try:
-        # Prompt disesuaikan dengan identitas TrunNews_
         prompt = f"""
         Tugas: Analisis Verifikasi Berita TrunNews_
         Teks: "{text}"
