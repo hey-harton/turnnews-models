@@ -18,7 +18,26 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 app = Flask(__name__)
-CORS(app)
+
+# ==========================================
+# FIX CORS: Konfigurasi Akses Lintas Domain
+# ==========================================
+# Mendaftarkan Vercel dan Localhost agar tidak diblokir oleh Azure
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://turnnews-site.vercel.app"  
+]
+
+CORS(app, resources={
+    r"/*": {
+        "origins": ALLOWED_ORIGINS,
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "Accept"],
+        "supports_credentials": True
+    }
+})
+# ==========================================
 
 # Inisialisasi Client Groq
 client = Groq(api_key=GROQ_API_KEY)
@@ -40,15 +59,16 @@ def get_groq_interpretation(text, result, confidence):
     Menghasilkan analisis cerdas dengan pembersihan karakter otomatis.
     """
     try:
+        # Prompt disesuaikan dengan identitas TrunNews_
         prompt = f"""
-        Tugas: Analisis Verifikasi Berita TrueNews
+        Tugas: Analisis Verifikasi Berita TrunNews_
         Teks: "{text}"
         Klasifikasi Awal: {result}
         Keyakinan Model: {confidence}
 
         Instruksi:
         1. Jelaskan fakta/hoax berita ini berdasarkan basis data pengetahuan global Anda.
-        2. Gunakan kalimat: "Model TrueNews memiliki keyakinan sebesar {confidence}".
+        2. Gunakan kalimat: "Model TrunNews_ memiliki keyakinan sebesar {confidence}".
         3. Jelaskan alasan teknis (bahasa/sumber) dan berikan kesimpulan akhir yang tegas.
 
         Aturan: Bahasa Indonesia, profesional, maksimal 4 kalimat, tanpa karakter spesial berlebih.
@@ -57,7 +77,7 @@ def get_groq_interpretation(text, result, confidence):
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "Anda adalah Senior Auditor TrueNews yang bertugas memberikan edukasi literasi berita secara objektif."},
+                {"role": "system", "content": "Anda adalah Senior Auditor TrunNews_ yang bertugas memberikan edukasi literasi berita secara objektif."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -73,8 +93,12 @@ def get_groq_interpretation(text, result, confidence):
         logger.error(f"Kesalahan pada Groq Analyst: {str(e)}")
         return "Interpretasi saat ini tidak tersedia, silakan verifikasi secara manual."
 
-@app.route('/predict', methods=['POST'])
+@app.route('/predict', methods=['POST', 'OPTIONS'])
 def predict():
+    # Menangani preflight request (OPTIONS) dari browser secara manual jika diperlukan
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
     try:
         data = request.get_json()
         if not data or 'text' not in data:
