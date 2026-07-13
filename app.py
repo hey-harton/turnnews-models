@@ -1,13 +1,13 @@
 import logging
 import os
+import tempfile
 
-import aws_lambda_wsgi
+import awsgi
 import joblib
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from groq import Groq
-
 
 # Logging configuration.
 logging.basicConfig(
@@ -16,14 +16,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 # Load environment variables.
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-
 app = Flask(__name__)
-
 
 # CORS configuration for allowed frontend origins.
 ALLOWED_ORIGINS = [
@@ -44,27 +41,61 @@ CORS(
     },
 )
 
-
 # Groq client initialization.
 client = Groq(api_key=GROQ_API_KEY)
 
-
-# Load model and vectorizer from local paths compatible with AWS Lambda.
+# =====================================================================
+# HYBRID MODEL LOADER (Cloudflare R2 + AWS Lambda / Local Fallback)
+# =====================================================================
 try:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    MODEL_PATH = os.path.join(BASE_DIR, "models", "truenews_model_xgb_v1.pkl")
-    VECTORIZER_PATH = os.path.join(BASE_DIR, "models", "tfidf_vectorizer_v1.pkl")
+    R2_ENDPOINT = os.getenv("R2_ENDPOINT_URL")
 
+    # Jika R2_ENDPOINT_URL ada di Environment Variables (Mode Produksi AWS Lambda)
+    if R2_ENDPOINT:
+        import boto3
+        logger.info("Mode Cloud: Mencoba mengunduh model dari Cloudflare R2...")
+        
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=R2_ENDPOINT,
+            aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
+            region_name="auto"
+        )
+        BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "turnnews-bucket")
+        
+        # tempfile.gettempdir() aman untuk Windows (C:\Temp) dan Linux (/tmp)
+        TEMP_DIR = tempfile.gettempdir() 
+        MODEL_PATH = os.path.join(TEMP_DIR, "truenews_model_xgb_v1.pkl")
+        VECTORIZER_PATH = os.path.join(TEMP_DIR, "tfidf_vectorizer_v1.pkl")
+
+        # Mengunduh hanya jika file belum ada di memory sementara (Warm Start Optimization)
+        if not os.path.exists(MODEL_PATH):
+            logger.info("Mengunduh truenews_model_xgb_v1.pkl dari R2...")
+            s3_client.download_file(BUCKET_NAME, 'truenews_model_xgb_v1.pkl', MODEL_PATH)
+
+        if not os.path.exists(VECTORIZER_PATH):
+            logger.info("Mengunduh tfidf_vectorizer_v1.pkl dari R2...")
+            s3_client.download_file(BUCKET_NAME, 'tfidf_vectorizer_v1.pkl', VECTORIZER_PATH)
+            
+    # Jika R2_ENDPOINT_URL tidak ada (Mode Development Lokal di VS Code)
+    else:
+        logger.info("Mode Lokal: Menggunakan model dari folder lokal...")
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        MODEL_PATH = os.path.join(BASE_DIR, "models", "truenews_model_xgb_v1.pkl")
+        VECTORIZER_PATH = os.path.join(BASE_DIR, "models", "tfidf_vectorizer_v1.pkl")
+
+    # Load ke memory
     model = joblib.load(MODEL_PATH)
     vectorizer = joblib.load(VECTORIZER_PATH)
-    logger.info("Sistem Backbone dan Analyst berhasil dimuat di AWS Lambda")
+    logger.info("Sistem Backbone dan Analyst berhasil dimuat!")
+
 except Exception as exc:
     logger.error(f"Gagal memuat model atau vectorizer: {str(exc)}")
-
+# =====================================================================
 
 def get_groq_interpretation(text, result, confidence):
     """Menghasilkan interpretasi analitis dari hasil klasifikasi."""
-
     try:
         prompt = f"""
         Tugas: Analisis Verifikasi Berita TrunNews_
@@ -103,7 +134,6 @@ def get_groq_interpretation(text, result, confidence):
     except Exception as exc:
         logger.error(f"Kesalahan pada Groq Analyst: {str(exc)}")
         return "Interpretasi saat ini tidak tersedia, silakan verifikasi secara manual."
-
 
 @app.route("/predict", methods=["POST", "OPTIONS"])
 def predict():
@@ -150,11 +180,9 @@ def predict():
         logger.error(f"Terjadi kesalahan sistem: {str(exc)}")
         return jsonify({"error": "Internal Server Error"}), 500
 
-
 # AWS Lambda handler called by API Gateway or Function URL.
 def handler(event, context):
-    return aws_lambda_wsgi.response(app, event, context)
-
+    return awsgi.response(app, event, context)
 
 # Local entry point.
 if __name__ == "__main__":
