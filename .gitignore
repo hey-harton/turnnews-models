@@ -1,5 +1,4 @@
 # === Lingkungan Lokal  ===
-# Folder ini berisi ribuan file library lokal yang akan dibangun ulang oleh Azure
 venv/
 env/
 .venv/
@@ -9,11 +8,9 @@ share/
 Include/
 
 # === Data Sensitif ===
-# JANGAN PERNAH mengunggah file ini karena berisi API Key Groq kamu
 .env
 
 # === Python Artifacts ===
-# File sampah yang otomatis dibuat saat Python menjalankan kode
 __pycache__/
 *.pyc
 *.pyo
@@ -35,5 +32,9 @@ Thumbs.db
 *.swo
 
 # === Logs ===
-# File catatan aktivitas server lokal
 *.log
+
+# === Pkl models ===
+*.pkl
+models/
+dataset/
