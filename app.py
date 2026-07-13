@@ -182,6 +182,12 @@ def predict():
 
 # AWS Lambda handler called by API Gateway or Function URL.
 def handler(event, context):
+    if 'httpMethod' not in event and 'requestContext' in event and 'http' in event['requestContext']:
+        event['httpMethod'] = event['requestContext']['http']['method']
+        event['path'] = event['requestContext']['http']['path']
+        if 'queryStringParameters' not in event:
+            event['queryStringParameters'] = {}
+
     return awsgi.response(app, event, context)
 
 # Local entry point.
