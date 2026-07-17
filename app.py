@@ -67,17 +67,21 @@ try:
             aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
             region_name="auto"
         )
-        BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "turnnews-bucket")
+        
+        # 🚀 PERBAIKAN 1: Nama bucket disesuaikan dengan yang ada di R2 (pakai strip)
+        BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "turn-news-bucket")
         
         # tempfile.gettempdir() aman untuk Windows (C:\Temp) dan Linux (/tmp)
         TEMP_DIR = tempfile.gettempdir() 
-        MODEL_PATH = os.path.join(TEMP_DIR, "truenews_model_xgb_v1.pkl")
+        
+        # 🚀 PERBAIKAN 2: Ekstensi model disesuaikan menjadi .pk
+        MODEL_PATH = os.path.join(TEMP_DIR, "truenews_model_xgb_v1.pk")
         VECTORIZER_PATH = os.path.join(TEMP_DIR, "tfidf_vectorizer_v1.pkl")
 
         # Mengunduh hanya jika file belum ada di memory sementara (Warm Start Optimization)
         if not os.path.exists(MODEL_PATH):
-            logger.info("Mengunduh truenews_model_xgb_v1.pkl dari R2...")
-            s3_client.download_file(BUCKET_NAME, "truenews_model_xgb_v1.pkl", MODEL_PATH)
+            logger.info("Mengunduh truenews_model_xgb_v1.pk dari R2...")
+            s3_client.download_file(BUCKET_NAME, "truenews_model_xgb_v1.pk", MODEL_PATH)
 
         if not os.path.exists(VECTORIZER_PATH):
             logger.info("Mengunduh tfidf_vectorizer_v1.pkl dari R2...")
@@ -87,7 +91,7 @@ try:
     else:
         logger.info("Mode Lokal: Menggunakan model dari folder lokal...")
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        MODEL_PATH = os.path.join(BASE_DIR, "models", "truenews_model_xgb_v1.pkl")
+        MODEL_PATH = os.path.join(BASE_DIR, "models", "truenews_model_xgb_v1.pk")
         VECTORIZER_PATH = os.path.join(BASE_DIR, "models", "tfidf_vectorizer_v1.pkl")
 
     # Load ke memory
