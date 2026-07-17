@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+import json
 
 import awsgi
 import joblib
@@ -47,6 +48,10 @@ client = Groq(api_key=GROQ_API_KEY)
 # =====================================================================
 # HYBRID MODEL LOADER (Cloudflare R2 + AWS Lambda / Local Fallback)
 # =====================================================================
+model = None
+vectorizer = None
+model_load_error = "Sistem belum mencoba memuat model."
+
 try:
     R2_ENDPOINT = os.getenv("R2_ENDPOINT_URL")
 
@@ -88,11 +93,14 @@ try:
     # Load ke memory
     model = joblib.load(MODEL_PATH)
     vectorizer = joblib.load(VECTORIZER_PATH)
+    model_load_error = None  # Kosongkan error jika berhasil
     logger.info("Sistem Backbone dan Analyst berhasil dimuat!")
 
 except Exception as exc:
-    logger.error(f"Gagal memuat model atau vectorizer: {str(exc)}")
+    model_load_error = str(exc)
+    logger.error(f"Gagal memuat model atau vectorizer: {model_load_error}")
 # =====================================================================
+
 
 def get_groq_interpretation(text, result, confidence):
     """Menghasilkan interpretasi analitis dari hasil klasifikasi."""
@@ -135,13 +143,26 @@ def get_groq_interpretation(text, result, confidence):
         logger.error(f"Kesalahan pada Groq Analyst: {str(exc)}")
         return "Interpretasi saat ini tidak tersedia, silakan verifikasi secara manual."
 
+
 @app.route("/predict", methods=["POST", "OPTIONS"])
 def predict():
     if request.method == "OPTIONS":
         return jsonify({}), 200
 
+    # 🚀 CEK ERROR INISIALISASI MODEL DARI R2
+    global model, vectorizer, model_load_error
+    if model is None or vectorizer is None:
+        return jsonify({
+            "error": "Sistem gagal memuat model ML dari Cloudflare R2.",
+            "r2_detail": model_load_error
+        }), 500
+
     try:
-        data = request.get_json()
+        # 🛡️ BLOK PARSING ANTI-BADAI AWS
+        data = request.get_json(force=True, silent=True)
+        if not data:
+            raw_data = request.get_data(as_text=True)
+            data = json.loads(raw_data) if raw_data else {}
         
         # Mengambil "content" (Postman/DB) atau "text" (Default)
         raw_text = data.get("content") or data.get("text")
@@ -182,6 +203,7 @@ def predict():
         logger.error(f"Terjadi kesalahan sistem: {str(exc)}")
         return jsonify({"error": f"Internal Server Error: {str(exc)}"}), 500
 
+
 # AWS Lambda handler called by API Gateway or Function URL.
 def handler(event, context):
     if "httpMethod" not in event and "requestContext" in event and "http" in event["requestContext"]:
@@ -191,6 +213,7 @@ def handler(event, context):
             event["queryStringParameters"] = {}
 
     return awsgi.response(app, event, context)
+
 
 # Local entry point.
 if __name__ == "__main__":
