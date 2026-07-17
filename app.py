@@ -26,7 +26,7 @@ app = Flask(__name__)
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://turnnews-site.vercel.app",
+    "https://turnnews-dev.dataspace.my.id",
 ]
 
 CORS(
@@ -56,7 +56,7 @@ try:
         logger.info("Mode Cloud: Mencoba mengunduh model dari Cloudflare R2...")
         
         s3_client = boto3.client(
-            's3',
+            "s3",
             endpoint_url=R2_ENDPOINT,
             aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
@@ -72,11 +72,11 @@ try:
         # Mengunduh hanya jika file belum ada di memory sementara (Warm Start Optimization)
         if not os.path.exists(MODEL_PATH):
             logger.info("Mengunduh truenews_model_xgb_v1.pkl dari R2...")
-            s3_client.download_file(BUCKET_NAME, 'truenews_model_xgb_v1.pkl', MODEL_PATH)
+            s3_client.download_file(BUCKET_NAME, "truenews_model_xgb_v1.pkl", MODEL_PATH)
 
         if not os.path.exists(VECTORIZER_PATH):
             logger.info("Mengunduh tfidf_vectorizer_v1.pkl dari R2...")
-            s3_client.download_file(BUCKET_NAME, 'tfidf_vectorizer_v1.pkl', VECTORIZER_PATH)
+            s3_client.download_file(BUCKET_NAME, "tfidf_vectorizer_v1.pkl", VECTORIZER_PATH)
             
     # Jika R2_ENDPOINT_URL tidak ada (Mode Development Lokal di VS Code)
     else:
@@ -142,10 +142,12 @@ def predict():
 
     try:
         data = request.get_json()
-        if not data or "text" not in data:
+        
+        # Mengambil "content" (Postman/DB) atau "text" (Default)
+        raw_text = data.get("content") or data.get("text")
+        
+        if not raw_text or not isinstance(raw_text, str):
             return jsonify({"error": "Payload tidak valid atau teks kosong"}), 400
-
-        raw_text = data["text"]
 
         # Transform text into vector representation and predict the class.
         vector = vectorizer.transform([raw_text])
@@ -178,15 +180,15 @@ def predict():
 
     except Exception as exc:
         logger.error(f"Terjadi kesalahan sistem: {str(exc)}")
-        return jsonify({"error": "Internal Server Error"}), 500
+        return jsonify({"error": f"Internal Server Error: {str(exc)}"}), 500
 
 # AWS Lambda handler called by API Gateway or Function URL.
 def handler(event, context):
-    if 'httpMethod' not in event and 'requestContext' in event and 'http' in event['requestContext']:
-        event['httpMethod'] = event['requestContext']['http']['method']
-        event['path'] = event['requestContext']['http']['path']
-        if 'queryStringParameters' not in event:
-            event['queryStringParameters'] = {}
+    if "httpMethod" not in event and "requestContext" in event and "http" in event["requestContext"]:
+        event["httpMethod"] = event["requestContext"]["http"]["method"]
+        event["path"] = event["requestContext"]["http"]["path"]
+        if "queryStringParameters" not in event:
+            event["queryStringParameters"] = {}
 
     return awsgi.response(app, event, context)
 
